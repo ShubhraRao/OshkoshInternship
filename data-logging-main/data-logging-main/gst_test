@@ -1,0 +1,65 @@
+#include <iostream>
+#include <gst/gst.h>
+
+static gboolean bus_callback(GstBus *bus, GstMessage *message, gpointer data) {
+    switch (GST_MESSAGE_TYPE(message)) {
+        case GST_MESSAGE_EOS:
+            g_print("End of stream\n");
+            break;
+        case GST_MESSAGE_ERROR: {
+            GError *err = nullptr;
+            gchar *debug_info = nullptr;
+            gst_message_parse_error(message, &err, &debug_info);
+            g_printerr("Error: %s\n", err->message);
+            g_error_free(err);
+            g_free(debug_info);
+            break;
+        }
+        default:
+            break;
+    }
+    return TRUE;
+}
+
+int main(int argc, char *argv[]) {
+    // Initialize GStreamer
+    gst_init(&argc, &argv);
+
+    // Create the pipeline
+    GstElement *pipeline = gst_pipeline_new("camera-pipeline");
+
+    // Create the elements
+    GstElement *source = gst_element_factory_make("v4l2src", "camera-source");
+    GstElement *sink = gst_element_factory_make("autovideosink", "display-sink");
+
+    if (!pipeline || !source || !sink) {
+        g_printerr("Not all elements could be created.\n");
+        return -1;
+    }
+
+    // Set up the pipeline
+    gst_bin_add_many(GST_BIN(pipeline), source, sink, nullptr);
+    gst_element_link(source, sink);
+
+    // Set the property for the camera device (e.g., /dev/video0)
+    g_object_set(G_OBJECT(source), "device", "/dev/video0", nullptr);
+
+    // Set up the bus to watch for messages
+    GstBus *bus = gst_element_get_bus(pipeline);
+    gst_bus_add_watch(bus, bus_callback, nullptr);
+    gst_object_unref(bus);
+
+    // Start playing the pipeline
+    gst_element_set_state(pipeline, GST_STATE_PLAYING);
+
+    // Wait until error or EOS
+    GMainLoop *loop = g_main_loop_new(nullptr, FALSE);
+    g_main_loop_run(loop);
+
+    // Clean up
+    gst_element_set_state(pipeline, GST_STATE_NULL);
+    gst_object_unref(GST_OBJECT(pipeline));
+    g_main_loop_unref(loop);
+
+    return 0;
+}
